@@ -1,0 +1,84 @@
+#activation function as Learnable Component
+
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+# Prepare data
+X, y = make_moons(n_samples=1000, noise=0.2, random_state=42)
+X = StandardScaler().fit_transform(X)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25)
+
+X_train = torch.tensor(X_train, dtype=torch.float32)
+y_train = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
+X_test = torch.tensor(X_test, dtype=torch.float32)
+y_test = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
+
+# Define model with choice of activation
+class MLP(nn.Module):
+    def __init__(self, use_prelu=False):
+        super().__init__()
+        self.fc1 = nn.Linear(2, 64)
+        self.act1 = nn.PReLU() if use_prelu else nn.ReLU()
+        self.fc2 = nn.Linear(64, 64)
+        self.act2 = nn.PReLU() if use_prelu else nn.ReLU()
+        self.fc3 = nn.Linear(64, 1)
+        self.sigmoid = nn.Sigmoid()
+    
+    def forward(self, x):
+        x = self.act1(self.fc1(x))
+        x = self.act2(self.fc2(x))
+        return self.sigmoid(self.fc3(x))
+
+# Train and return model + accuracy
+def train_model(use_prelu=False, epochs=50):
+    model = MLP(use_prelu)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    criterion = nn.BCELoss()
+
+    for epoch in range(epochs):
+        model.train()
+        y_pred = model(X_train)
+        loss = criterion(y_pred, y_train)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    # Evaluation
+    model.eval()
+    with torch.no_grad():
+        acc = ((model(X_test) > 0.5).float() == y_test).float().mean().item()
+    return model, acc
+
+# Train both models
+relu_model, acc_relu = train_model(use_prelu=False)
+prelu_model, acc_prelu = train_model(use_prelu=True)
+
+# for name, param in prelu_model.named_parameters():
+#     if "weight" not in name and "PReLU" in str(type(getattr(prelu_model, name.split(".")[0]))):
+#         print(f"{name}: {param.item():.4f}")
+
+# Plot decision boundary
+def plot_decision_boundary(model, title):
+    x_min, x_max = X[:, 0].min() - .5, X[:, 0].max() + .5
+    y_min, y_max = X[:, 1].min() - .5, X[:, 1].max() + .5
+    xx, yy = torch.meshgrid(torch.linspace(x_min, x_max, 200),
+                            torch.linspace(y_min, y_max, 200))
+    grid = torch.cat([xx.reshape(-1, 1), yy.reshape(-1, 1)], dim=1)
+    with torch.no_grad():
+        Z = model(grid).reshape(xx.shape)
+    plt.contourf(xx, yy, Z, levels=50, cmap="RdBu", alpha=0.7)
+    plt.scatter(X[:, 0], X[:, 1], c=y, edgecolor='k', cmap="coolwarm", s=30)
+    plt.title(title)
+    plt.axis("off")
+
+plt.figure(figsize=(12, 5))
+plt.subplot(1, 2, 1)
+plot_decision_boundary(relu_model, f"ReLU — Acc: {acc_relu:.2f}")
+plt.subplot(1, 2, 2)
+plot_decision_boundary(prelu_model, f"PReLU (learned a) — Acc: {acc_prelu:.2f}")
+plt.tight_layout()
+plt.show()
