@@ -1,0 +1,104 @@
+# complete dataset
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+from sklearn.datasets import make_moons
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+# Create dataset
+X, y = make_moons(n_samples=1000, noise=0.2, random_state=42)
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+
+# Convert to PyTorch tensors
+X_train = torch.tensor(X_train, dtype=torch.float32)
+y_train = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
+X_test = torch.tensor(X_test, dtype=torch.float32)
+y_test = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
+
+# Simple MLP with configurable activation
+class MLP(nn.Module):
+    def __init__(self, act_fn):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(2, 16),
+            act_fn,
+            nn.Linear(16, 16),
+            act_fn,
+            nn.Linear(16, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+# 🏋️ Training loop
+def train_model(act_name, act_fn, epochs=50):
+    model = MLP(act_fn)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    loss_fn = nn.BCELoss()
+    train_losses, test_accs = [], []
+
+    for epoch in range(epochs):
+        model.train()
+        y_pred = model(X_train)
+        loss = loss_fn(y_pred, y_train)
+        train_losses.append(loss.item())
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Evaluation
+        model.eval()
+        with torch.no_grad():
+            preds = (model(X_test) > 0.5).float()
+            acc = (preds == y_test).float().mean().item()
+            test_accs.append(acc)
+
+    return train_losses, test_accs
+
+# Activation functions to compare
+activations = {
+    "ReLU": nn.ReLU(),
+    "LeakyReLU": nn.LeakyReLU(0.01),
+    "Tanh": nn.Tanh(),
+    "Sigmoid": nn.Sigmoid(),
+    "ELU": nn.ELU(),
+    "GELU": nn.GELU()
+}
+
+# Run all activations
+results = {}
+for name, fn in activations.items():
+    print(f"Training with {name}...")
+    loss, acc = train_model(name, fn)
+    results[name] = {"loss": loss, "acc": acc}
+
+# Plot results
+plt.figure(figsize=(14, 5))
+
+# Loss plot
+plt.subplot(1, 2, 1)
+for name in results:
+    plt.plot(results[name]["loss"], label=name)
+plt.title("Training Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+
+# Accuracy plot
+plt.subplot(1, 2, 2)
+for name in results:
+    plt.plot(results[name]["acc"], label=name)
+plt.title("Test Accuracy")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
